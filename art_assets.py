@@ -2,6 +2,7 @@
 """Creepy, high-detail ASCII art themes for REDEYESdontcry.
 Every major screen picks a different theme. Colors are applied by the caller (pink/red palette).
 """
+import os
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -116,6 +117,8 @@ _THEMES = {
 
 
 def print_theme(theme: str) -> None:
+    if os.getenv("REDEYES_NO_ART") == "1":
+        return
     art = _THEMES.get(theme, _THEMES["main"]).rstrip("\n")
     panel = Panel(Align.center(Text(art, style="red dim")), border_style="red", padding=(0, 2))
     console.print(panel)

@@ -25,12 +25,8 @@ from rich.syntax import Syntax
 from rich import box
 from rich.status import Status
 
-# Import Target dataclass from legacy framework and art themes
-try:
-    from REDEYESdontcry import Target
-except Exception:
-    Target = None
-
+# Import centralized Target dataclass and art themes
+from redeyes.core.models import Target
 from art_assets import print_theme
 
 console = Console()
@@ -624,11 +620,7 @@ class CompletedImplementations:
                         
                         # Add to targets if not already present
                         if ip not in framework.targets:
-                            if Target:
-                                framework.targets[ip] = Target(ip=ip, hostname=hostname if hostname != "Unknown" else None)
-                            else:
-                                # Fallback minimal structure if import failed
-                                framework.targets[ip] = type("_Target", (), {"ip": ip, "hostname": (hostname if hostname != "Unknown" else None), "open_ports": [], "services": {}, "vulnerabilities": [], "exploited": False, "shells": [], "credentials": [], "notes": []})()
+                            framework.targets[ip] = Target(ip=ip, hostname=hostname if hostname != "Unknown" else None)
                         
                         host_table.add_row(ip, hostname, "🟢 Active")
                     

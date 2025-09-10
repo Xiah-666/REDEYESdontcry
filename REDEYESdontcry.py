@@ -74,35 +74,7 @@ WARNING_COLOR = "yellow"
 ERROR_COLOR = "bright_red"
 INFO_COLOR = "cyan"
 
-class TestPhase(Enum):
-    OSINT = "osint"
-    RECONNAISSANCE = "reconnaissance" 
-    ENUMERATION = "enumeration"
-    VULNERABILITY_SCAN = "vulnerability_scan"
-    EXPLOITATION = "exploitation"
-    POST_EXPLOITATION = "post_exploitation"
-    PERSISTENCE = "persistence"
-    LOG_ANALYSIS = "log_analysis"
-    REPORTING = "reporting"
-
-@dataclass
-class Target:
-    ip: str
-    hostname: Optional[str] = None
-    open_ports: List[int] = field(default_factory=list)
-    services: Dict[int, str] = field(default_factory=dict)
-    vulnerabilities: List[str] = field(default_factory=list)
-    exploited: bool = False
-    shells: List[str] = field(default_factory=list)
-    credentials: List[str] = field(default_factory=list)
-    notes: List[str] = field(default_factory=list)
-
-@dataclass
-class ChatMessage:
-    sender: str  # 'user' or 'ai'
-    content: str
-    timestamp: datetime
-    context_data: Optional[Dict] = None
+from redeyes.core.models import TestPhase, Target, ChatMessage
 
 class REDEYESFramework:
     def __init__(self):
@@ -350,6 +322,18 @@ Current Target Context:
         status_table.add_row("🎯 Targets:", f"[{INFO_COLOR}]{len(self.targets)} loaded[/]")
 
         console.print(Panel(status_table, title="[bold]🔍 System Status[/]", border_style=INFO_COLOR))
+
+        # Non-blocking legal & ethical usage notice (beginning)
+        legal = Panel(
+            Align.center(Text(
+                "AUTHORIZED TESTING ONLY. Use this framework with explicit permission.\n"
+                "This notice is informational and does not block operation.",
+                style="yellow"
+            )),
+            title="⚖️ Legal & Ethics",
+            border_style="yellow",
+        )
+        console.print(legal)
 
     def show_main_menu(self):
         """Display main menu and handle selection"""
