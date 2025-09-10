@@ -861,7 +861,9 @@ Example queries:
                       f"Model: {self.selected_model or 'N/A'}")
         console.print(f"[cyan]Results Dir:[/] {self.results_dir}")
         console.print(f"[cyan]Tools Found:[/] [green]{available_tools}/{len(self.tools_status)}[/]")
-        input("\n⏸️ Press Enter to continue...")
+        import os as _os
+        if _os.getenv("REDEYES_CHECK_MODE") != "1":
+            input("\n⏸️ Press Enter to continue...")
     
     def autonomous_agent_interface(self):
         """Autonomous AI Agent interface for full red team automation"""

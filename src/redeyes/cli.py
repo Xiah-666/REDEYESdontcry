@@ -43,7 +43,8 @@ def main():
     try:
         app = REDEYESFramework()
         if args.check:
-            # Show tool and environment status then exit
+            # Show tool and environment status then exit without waiting for input
+            os.environ["REDEYES_CHECK_MODE"] = "1"
             app.show_tool_status()
             return
         app.show_main_menu()
