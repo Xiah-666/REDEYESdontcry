@@ -22,6 +22,13 @@ from rich.live import Live
 from rich.table import Table
 from rich.align import Align
 
+# Prefer centralized safe executor if available
+try:
+    from redeyes.core.exec import safe_run as _core_safe_run
+    _USE_CORE_SAFE = True
+except Exception:
+    _USE_CORE_SAFE = False
+
 console = Console()
 
 class AIAgent:
@@ -433,26 +440,38 @@ class AIAgent:
     
     def _run_command_safely(self, command: str) -> Dict[str, Any]:
         """Safely execute command with timeout and error handling"""
-        try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5 minute timeout
-                cwd=str(self.framework.results_dir)
-            )
-            
-            return {
-                'success': result.returncode == 0,
-                'output': result.stdout,
-                'error': result.stderr,
-                'return_code': result.returncode
-            }
-        except subprocess.TimeoutExpired:
-            return {'success': False, 'error': 'Command timed out', 'output': ''}
-        except Exception as e:
-            return {'success': False, 'error': str(e), 'output': ''}
+        if _USE_CORE_SAFE:
+            try:
+                res = _core_safe_run(command, cwd=self.framework.results_dir, timeout_s=300)
+                return {
+                    'success': res.ok,
+                    'output': res.stdout,
+                    'error': res.stderr,
+                    'return_code': res.exit_code,
+                }
+            except Exception as e:
+                return {'success': False, 'error': str(e), 'output': ''}
+        else:
+            try:
+                result = subprocess.run(
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=300,  # 5 minute timeout
+                    cwd=str(self.framework.results_dir)
+                )
+                
+                return {
+                    'success': result.returncode == 0,
+                    'output': result.stdout,
+                    'error': result.stderr,
+                    'return_code': result.returncode
+                }
+            except subprocess.TimeoutExpired:
+                return {'success': False, 'error': 'Command timed out', 'output': ''}
+            except Exception as e:
+                return {'success': False, 'error': str(e), 'output': ''}
     
     def _run_exploit_safely(self, command: str, target: str) -> Dict[str, Any]:
         """Safely execute exploit with additional monitoring"""
