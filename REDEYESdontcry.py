@@ -74,7 +74,14 @@ WARNING_COLOR = "yellow"
 ERROR_COLOR = "bright_red"
 INFO_COLOR = "cyan"
 
-from redeyes.core.models import TestPhase, Target, ChatMessage
+# Ensure local 'src' is importable when running from repo root
+try:
+    from redeyes.core.models import TestPhase, Target, ChatMessage
+except Exception:
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str((_Path(__file__).parent / "src").resolve()))
+    from redeyes.core.models import TestPhase, Target, ChatMessage
 
 class REDEYESFramework:
     def __init__(self):
