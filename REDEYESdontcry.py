@@ -156,6 +156,7 @@ class REDEYESFramework:
             'wafw00f': 'wafw00f',
             'wpscan': 'wpscan',
             'sqlmap': 'sqlmap',
+            'ffuf': 'ffuf',
 
             # Exploitation
             'metasploit': 'msfconsole',
@@ -183,7 +184,15 @@ class REDEYESFramework:
             'subfinder': 'subfinder',
             'assetfinder': 'assetfinder',
             'httprobe': 'httprobe',
-            'waybackurls': 'waybackurls'
+            'waybackurls': 'waybackurls',
+            'sherlock': 'sherlock',
+            'holehe': 'holehe',
+            'mapcidr': 'mapcidr',
+            'httpx': 'httpx',
+            'naabu': 'naabu',
+            'nuclei': 'nuclei',
+            'dnsx': 'dnsx',
+            'katana': 'katana',
         }
 
         for tool_name, binary in tools.items():
@@ -464,13 +473,15 @@ Current Target Context:
             osint_table.add_row("6", "⚔️ Fierce DNS Scanner", self._tool_status('fierce'))
             osint_table.add_row("7", "🔧 Custom OSINT Workflow", "[green]Available[/]")
             osint_table.add_row("8", "🤖 AI-Powered OSINT Analysis", "[green]Available[/]" if self.ollama_available else "[red]Offline[/]")
+            osint_table.add_row("9", "🧑 Background Check (Person)", "[green]Available[/]")
+            osint_table.add_row("10", "🏢 Background Check (Company)", "[green]Available[/]")
             osint_table.add_row("0", "⬅️ Back to Main Menu", "")
 
             console.print(osint_table)
 
             try:
                 choice = Prompt.ask(f"[{USER_COLOR}]Select OSINT option[/]",
-                                  choices=['0', '1', '2', '3', '4', '5', '6', '7', '8'])
+                                  choices=['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'])
 
                 if choice == '0':
                     break
@@ -490,6 +501,10 @@ Current Target Context:
                     self.custom_osint_workflow()
                 elif choice == '8':
                     self.ai_osint_analysis()
+                elif choice == '9':
+                    self.background_check_person()
+                elif choice == '10':
+                    self.background_check_company()
 
             except KeyboardInterrupt:
                 break
@@ -512,7 +527,8 @@ Current Target Context:
 
                 if result.stdout:
                     # Save results
-                    output_file = self.results_dir / f'whois_{target.replace(".", "_").replace(":", "_")}.txt'
+                    out_dir = self._active_output_dir()
+                    output_file = out_dir / f'whois_{target.replace(".", "_").replace(":", "_")}.txt'
                     with open(output_file, 'w') as f:
                         f.write(result.stdout)
 
@@ -525,6 +541,7 @@ Current Target Context:
                     ))
 
                     console.print(f"[{INFO_COLOR}]💾 Full results saved to: {output_file}[/]")
+                    self._print_tip_quick()
 
                     # AI analysis if available
                     if self.ollama_available:
@@ -560,8 +577,8 @@ Current Target Context:
                     all_results = []
 
                     for record_type in record_types:
-                    cmd = self._wrap_cmd(['dig', '+short', record_type, target])
-                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                        cmd = self._wrap_cmd(['dig', '+short', record_type, target])
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
                         if result.stdout.strip():
                             all_results.append(f"=== {record_type} Records ===")
                             all_results.append(result.stdout.strip())
@@ -570,7 +587,8 @@ Current Target Context:
                     if all_results:
                         combined_output = "\n".join(all_results)
 
-                        output_file = self.results_dir / f'dns_{target.replace(".", "_")}.txt'
+                        out_dir = self._active_output_dir()
+                        output_file = out_dir / f'dns_{target.replace(".", "_")}.txt'
                         with open(output_file, 'w') as f:
                             f.write(combined_output)
 
@@ -581,6 +599,7 @@ Current Target Context:
                         ))
 
                         console.print(f"[{INFO_COLOR}]💾 Results saved to: {output_file}[/]")
+                        self._print_tip_quick()
                     else:
                         console.print(f"[{WARNING_COLOR}]⚠️ No DNS records found for {target}[/]")
 
@@ -592,7 +611,8 @@ Current Target Context:
                     cmd = self._wrap_cmd(['dnsrecon', '-d', target, '-t', 'std'])
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
-                    output_file = self.results_dir / f'dnsrecon_{target.replace(".", "_")}.txt'
+                    out_dir = self._active_output_dir()
+                    output_file = out_dir / f'dnsrecon_{target.replace(".", "_")}.txt'
                     with open(output_file, 'w') as f:
                         f.write(result.stdout)
 
@@ -604,6 +624,7 @@ Current Target Context:
                     ))
 
                     console.print(f"[{INFO_COLOR}]💾 Full results saved to: {output_file}[/]")
+                    self._print_tip_quick()
 
                     # Extract key information for context
                     self.context_data['dns_info'] = result.stdout
@@ -835,6 +856,94 @@ Example queries:
             border_style=AI_COLOR
         ))
         input("\n⏸️ Press Enter to continue...")
+
+    def background_check_person(self):
+        """Run a person-focused background check using available CLI tools."""
+        name = Prompt.ask(f"[{USER_COLOR}]Full Name (for notes) [/]")
+        username = Prompt.ask(f"[{USER_COLOR}]Username (optional)[/]")
+        email = Prompt.ask(f"[{USER_COLOR}]Email (optional)[/]")
+        case_dir = self._active_output_dir() / 'casefiles' / f"person_{re.sub(r'[^a-zA-Z0-9_-]', '_', name) if name else 'unknown'}"
+        case_dir.mkdir(parents=True, exist_ok=True)
+
+        # sherlock (username)
+        if username and self.tools_status.get('sherlock', {}).get('available'):
+            console.print(f"[{INFO_COLOR}]Running sherlock for username {username}[/]")
+            cmd = self._wrap_cmd(['sherlock', username, '--print-found', '--timeout', '10', '--no-color'])
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            (case_dir / 'sherlock.txt').write_text(res.stdout or '')
+        # holehe (email)
+        if email and self.tools_status.get('holehe', {}).get('available'):
+            console.print(f"[{INFO_COLOR}]Running holehe for email {email}[/]")
+            cmd = self._wrap_cmd(['holehe', '-s', email])
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            (case_dir / 'holehe.txt').write_text(res.stdout or '')
+        # psbdmp email paste search via curl
+        if email:
+            try:
+                cmd = self._wrap_cmd(['curl', '-sS', f'https://psbdmp.ws/api/search/{email}'])
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                (case_dir / 'psbdmp.json').write_text(res.stdout or '')
+            except Exception:
+                pass
+
+        # Summary index
+        summary = case_dir / 'SUMMARY.md'
+        lines = [
+            f"# Background Check (Person)",
+            f"Name: {name}",
+            f"Username: {username}",
+            f"Email: {email}",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        ]
+        summary.write_text("\n".join(lines))
+        console.print(f"[{SUCCESS_COLOR}]Background check saved under: {case_dir}[/]")
+        self._print_tip_quick()
+
+    def background_check_company(self):
+        """Run a company/domain-focused background check using available CLI tools."""
+        target = Prompt.ask(f"[{USER_COLOR}]Company Domain (e.g., example.com)[/]")
+        if not target:
+            return
+        out = self._active_output_dir() / 'casefiles' / f"company_{re.sub(r'[^a-zA-Z0-9_-]', '_', target)}"
+        out.mkdir(parents=True, exist_ok=True)
+
+        # subfinder
+        if self.tools_status.get('subfinder', {}).get('available'):
+            console.print(f"[{INFO_COLOR}]subfinder on {target}[/]")
+            cmd = self._wrap_cmd(['subfinder', '-d', target, '-silent'])
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            (out / 'subdomains_subfinder.txt').write_text(res.stdout or '')
+        # amass passive
+        if self.tools_status.get('amass', {}).get('available'):
+            console.print(f"[{INFO_COLOR}]amass passive enum on {target}[/]")
+            cmd = self._wrap_cmd(['amass', 'enum', '-passive', '-d', target])
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            (out / 'subdomains_amass.txt').write_text(res.stdout or '')
+        # assetfinder
+        if self.tools_status.get('assetfinder', {}).get('available'):
+            console.print(f"[{INFO_COLOR}]assetfinder on {target}[/]")
+            cmd = self._wrap_cmd(['assetfinder', target])
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            (out / 'subdomains_assetfinder.txt').write_text(res.stdout or '')
+        # httpx probe
+        if self.tools_status.get('httpx', {}).get('available') and (out / 'subdomains_subfinder.txt').exists():
+            console.print(f"[{INFO_COLOR}]httpx probing[/]")
+            res = subprocess.run(self._wrap_cmd(['httpx', '-l', str(out / 'subdomains_subfinder.txt'), '-silent']), capture_output=True, text=True, timeout=900)
+            (out / 'alive_hosts.txt').write_text(res.stdout or '')
+        # nuclei basic scan
+        if self.tools_status.get('nuclei', {}).get('available') and (out / 'alive_hosts.txt').exists():
+            console.print(f"[{INFO_COLOR}]nuclei on alive hosts[/]")
+            res = subprocess.run(self._wrap_cmd(['nuclei', '-l', str(out / 'alive_hosts.txt'), '-silent']), capture_output=True, text=True, timeout=1800)
+            (out / 'nuclei.txt').write_text(res.stdout or '')
+
+        # summary
+        (out / 'SUMMARY.md').write_text("\n".join([
+            f"# Background Check (Company)",
+            f"Domain: {target}",
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        ]))
+        console.print(f"[{SUCCESS_COLOR}]Company check saved under: {out}[/]")
+        self._print_tip_quick()
 
     def enumeration_menu(self):
         """Complete network enumeration menu"""
@@ -1438,6 +1547,22 @@ Example queries:
             return None
         return None
 
+    def _print_tip_quick(self) -> None:
+        """Print a one-liner tip if model is available and auto-tips are enabled."""
+        if os.getenv("REDEYES_TIPS_AUTO") != "1" or not self.ollama_available:
+            return
+        model = self.selected_model
+        for m in self.ollama_models:
+            if 'baron' in m.lower():
+                model = m
+                break
+        prev = self.selected_model
+        self.selected_model = model
+        tip = self.query_ollama("One concise tip for the next action given the current context. One line.", "You are a tactical advisor.")
+        self.selected_model = prev
+        if tip:
+            console.print(f"[cyan]💡 {tip.strip()}[/]")
+
     def show_context_tips(self):
         """Ask the model for quick, situation-aware tips."""
         if not self.ollama_available:
@@ -1716,7 +1841,8 @@ Example queries:
             default='html'
         )
         
-        report_file = self.results_dir / f'report_{self.session_id}.{"html" if report_format == "html" else "md" if report_format == "markdown" else "txt" if report_format == "text" else "json"}'
+        out_dir = self._active_output_dir()
+        report_file = out_dir / f'report_{self.session_id}.{"html" if report_format == "html" else "md" if report_format == "markdown" else "txt" if report_format == "text" else "json"}'
         
         try:
             # Calculate statistics
