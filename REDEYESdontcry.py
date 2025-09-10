@@ -76,12 +76,12 @@ INFO_COLOR = "cyan"
 
 # Ensure local 'src' is importable when running from repo root
 try:
-    from redeyes.core.models import TestPhase, Target, ChatMessage
+    from redeyes.core.models import TestPhase, Target, ChatMessage, Case
 except Exception:
     import sys as _sys
     from pathlib import Path as _Path
     _sys.path.insert(0, str((_Path(__file__).parent / "src").resolve()))
-    from redeyes.core.models import TestPhase, Target, ChatMessage
+    from redeyes.core.models import TestPhase, Target, ChatMessage, Case
 
 class REDEYESFramework:
     def __init__(self):
@@ -95,6 +95,19 @@ class REDEYESFramework:
         self.current_phase = TestPhase.OSINT
         self.chat_history = []
         self.context_data = {}
+
+        # Case management
+        self.cases_root = Path(os.getenv("REDEYES_CASES_DIR", str(self.results_dir / "cases")))
+        self.cases_root.mkdir(parents=True, exist_ok=True)
+        self.active_case: Optional[Case] = None
+
+        # Privacy/opsec settings
+        self.tor_mode = os.getenv("REDEYES_TOR", "0") == "1"
+        self.auto_mac = os.getenv("REDEYES_AUTO_MAC", "0") == "1"
+
+        # LLM supervision knobs
+        # Agent retains confirmations for risky ops; safe ops can be auto-accepted if this is true
+        self.agent_auto_mode = os.getenv("REDEYES_AGENT_AUTO", "0") == "1"
 
         # Ollama integration
         self.ollama_models = []
@@ -197,8 +210,9 @@ class REDEYESFramework:
                         model_name = line.split()[0]
                         self.ollama_models.append(model_name)
 
-                # Auto-select best uncensored/abliterated model
+                # Auto-select best preferred models (prioritize guidance/tips and pentest specialists)
                 priority_keywords = [
+                    'baronllm', 'baron',
                     'neuraldaredevil', 'daredevil', 'wizard-vicuna', 'dolphin',
                     'codellama', 'uncensored', 'abliterated', 'qwen', 'deepseek',
                     'lexi', 'chaos'
@@ -344,6 +358,7 @@ Current Target Context:
 
     def show_main_menu(self):
         """Display main menu and handle selection"""
+        self._ensure_legal_ack()
         while True:
             console.clear()
             self.show_banner()
@@ -366,13 +381,16 @@ Current Target Context:
             menu_table.add_row("11", "📝 Generate Report", "[yellow]Create Report[/]")
             menu_table.add_row("12", "👤 Individual OSINT Investigation", "[cyan]Private Investigations[/]")
             menu_table.add_row("13", "📡 Wireless Network Pentest", "[magenta]WiFi Security Testing[/]")
+            menu_table.add_row("14", "🗂️ Case Manager", f"[cyan]{self.active_case.name}[/]" if self.active_case else "[yellow]No Active Case[/]")
+            menu_table.add_row("15", "🛡️ Privacy & OpSec Presets", ("[green]Tor ON[/]" if self.tor_mode else "[red]Tor OFF[/]") + (" / Auto-MAC" if self.auto_mac else ""))
+            menu_table.add_row("16", "💡 Context Tips", "[cyan]AI Tips[/]" if self.ollama_available else "[red]Offline[/]")
             menu_table.add_row("0", "❌ Exit", "[red]Quit[/]")
 
             console.print(Panel(menu_table, title="[bold magenta]👁️ REDEYESdontcry Main Menu[/]"))
 
             try:
                 choice = Prompt.ask(f"[{USER_COLOR}]Select option[/]", 
-                                  choices=['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13'])
+                                  choices=['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16'])
 
                 if choice == '0':
                     self._cleanup_and_exit()
@@ -402,6 +420,12 @@ Current Target Context:
                     self.individual_osint_menu()
                 elif choice == '13':
                     self.wireless_pentest_menu()
+                elif choice == '14':
+                    self.case_manager()
+                elif choice == '15':
+                    self.privacy_opsec_menu()
+                elif choice == '16':
+                    self.show_context_tips()
 
             except KeyboardInterrupt:
                 self._cleanup_and_exit()
@@ -482,7 +506,8 @@ Current Target Context:
 
         with console.status(f"[{AI_COLOR}]🔍 Running whois lookup on {target}...[/]"):
             try:
-                result = subprocess.run(['whois', target], 
+                cmd = self._wrap_cmd(['whois', target])
+                result = subprocess.run(cmd, 
                                       capture_output=True, text=True, timeout=30)
 
                 if result.stdout:
@@ -535,8 +560,8 @@ Current Target Context:
                     all_results = []
 
                     for record_type in record_types:
-                        cmd = ['dig', '+short', record_type, target]
-                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                    cmd = self._wrap_cmd(['dig', '+short', record_type, target])
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
                         if result.stdout.strip():
                             all_results.append(f"=== {record_type} Records ===")
                             all_results.append(result.stdout.strip())
@@ -564,7 +589,7 @@ Current Target Context:
         else:
             with console.status(f"[{AI_COLOR}]🔍 Running comprehensive DNS reconnaissance...[/]"):
                 try:
-                    cmd = ['dnsrecon', '-d', target, '-t', 'std']
+                    cmd = self._wrap_cmd(['dnsrecon', '-d', target, '-t', 'std'])
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
                     output_file = self.results_dir / f'dnsrecon_{target.replace(".", "_")}.txt'
@@ -741,13 +766,17 @@ Example queries:
 
     def _execute_and_capture(self, command: str) -> None:
         """Execute a shell command with confirmation already obtained, capture output, and save to file."""
-        console.print(f"[{INFO_COLOR}]Running: {command}[/]")
+        wrapped = self._wrap_cmd(command)
+        console.print(f"[{INFO_COLOR}]Running: {wrapped if isinstance(wrapped, str) else ' '.join(wrapped)}[/]")
         try:
             ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-            out_dir = self.results_dir / 'commands'
-            out_dir.mkdir(exist_ok=True)
+            out_dir = (self._active_output_dir() / 'commands')
+            out_dir.mkdir(parents=True, exist_ok=True)
             outfile = out_dir / f"cmd_{ts}.txt"
-            result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=900)
+            if isinstance(wrapped, list):
+                result = subprocess.run(wrapped, shell=False, capture_output=True, text=True, timeout=900)
+            else:
+                result = subprocess.run(wrapped, shell=True, capture_output=True, text=True, timeout=900)
             with open(outfile, 'w') as f:
                 f.write(f"$ {command}\n\n")
                 f.write(result.stdout or '')
@@ -758,7 +787,7 @@ Example queries:
         except subprocess.TimeoutExpired:
             console.print(f"[{ERROR_COLOR}]Command timed out[/]")
         except Exception as e:
-            console.print(f"[{ERROR_COLOR}]Execution failed: {e}[/]")
+            console.print(f"[{ERROR_COLOR}]Execution failed: {e}")
 
     # Completed OSINT implementations
     def run_subdomain_enum(self):
@@ -965,6 +994,8 @@ Example queries:
         
         # Model ratings and classifications
         model_ratings = {
+            'baronllm': ('Guidance & Tips', '⭐⭐⭐⭐⭐ ELITE', 'varies'),
+            'baron': ('Guidance & Tips', '⭐⭐⭐⭐⭐ ELITE', 'varies'),
             'neuraldaredevil': ('Specialized Pentest', '⭐⭐⭐⭐⭐ BEST', '4.7GB'),
             'daredevil': ('Specialized Pentest', '⭐⭐⭐⭐⭐ BEST', '4.7GB'),
             'wizard-vicuna': ('Uncensored General', '⭐⭐⭐⭐ EXCELLENT', '3.8GB'),
@@ -1266,6 +1297,167 @@ Example queries:
         console.print(summary_table)
         
         input("\nPress Enter to continue...")
+
+    def _wrap_cmd(self, cmd_or_list):
+        """Optionally route command through torsocks when tor_mode is enabled.
+        Preserves type (list vs str).
+        """
+        if not self.tor_mode:
+            return cmd_or_list
+        # Only wrap if torsocks is installed
+        try:
+            rt = subprocess.run(['which', 'torsocks'], capture_output=True, text=True, timeout=3)
+            if rt.returncode != 0:
+                return cmd_or_list
+        except Exception:
+            return cmd_or_list
+        if isinstance(cmd_or_list, list):
+            return ['torsocks'] + cmd_or_list
+        else:
+            return f"torsocks {cmd_or_list}"
+
+    def _active_output_dir(self) -> Path:
+        """Returns the output directory, preferring active case root if set."""
+        if self.active_case and self.active_case.root:
+            return self.active_case.root
+        return self.results_dir
+
+    def _ensure_legal_ack(self) -> None:
+        """One-time per-run legal acknowledgement."""
+        if os.getenv("REDEYES_ASSUME_YES") == "1" or os.getenv("REDEYES_LEGAL_ACCEPTED") == "1":
+            return
+        from rich.prompt import Confirm
+        if Confirm.ask("[yellow]Use only with authorization. Do you agree?[/]", default=True):
+            os.environ["REDEYES_LEGAL_ACCEPTED"] = "1"
+        else:
+            console.print(f"[{ERROR_COLOR}]Operation cancelled by user[/]")
+            raise SystemExit(1)
+
+    def case_manager(self):
+        """Simple case manager: create/open/close and set active case context."""
+        console.clear()
+        print_theme("report")
+        from rich.table import Table
+        from rich.prompt import Prompt
+        table = Table(title="Case Manager")
+        table.add_column("Option", style="cyan")
+        table.add_column("Action")
+        table.add_row("1", "Create Case")
+        table.add_row("2", "Open Case")
+        table.add_row("3", "Close Active Case")
+        table.add_row("0", "Back")
+        console.print(table)
+        choice = Prompt.ask("Select", choices=["0","1","2","3"], default="0")
+        if choice == "1":
+            name = Prompt.ask("Case name")
+            cid = datetime.now().strftime('%Y%m%d_%H%M%S')
+            root = self.cases_root / f"{cid}_{re.sub(r'[^a-zA-Z0-9_-]', '_', name)}"
+            root.mkdir(parents=True, exist_ok=True)
+            self.active_case = Case(case_id=cid, name=name, root=root, created_at=datetime.now())
+            console.print(f"[{SUCCESS_COLOR}]Active case set: {name}[/]")
+        elif choice == "2":
+            # List cases under root
+            cases = [p for p in self.cases_root.iterdir() if p.is_dir()]
+            if not cases:
+                console.print(f"[{WARNING_COLOR}]No cases found[/]")
+                input("Enter to continue...")
+                return
+            for idx, p in enumerate(cases, 1):
+                console.print(f"{idx}. {p.name}")
+            s = Prompt.ask("Pick", choices=[str(i) for i in range(1, len(cases)+1)])
+            pick = cases[int(s)-1]
+            cid = pick.name.split('_',1)[0]
+            self.active_case = Case(case_id=cid, name=pick.name, root=pick, created_at=datetime.now())
+            console.print(f"[{SUCCESS_COLOR}]Active case: {pick.name}[/]")
+        elif choice == "3":
+            self.active_case = None
+            console.print(f"[{SUCCESS_COLOR}]Case context cleared[/]")
+        input("Enter to continue...")
+
+    def privacy_opsec_menu(self):
+        """Privacy presets: Tor routing toggle and MAC changer."""
+        console.clear()
+        print_theme("tools")
+        from rich.table import Table
+        from rich.prompt import Confirm, Prompt
+        t = Table(title="Privacy & OpSec Presets")
+        t.add_column("Setting")
+        t.add_column("Value")
+        t.add_row("Tor routing (torsocks)", "ENABLED" if self.tor_mode else "DISABLED")
+        t.add_row("Auto MAC before scans", "ENABLED" if self.auto_mac else "DISABLED")
+        console.print(t)
+        console.print("\n1) Toggle Tor routing\n2) Toggle Auto-MAC (requires sudo/macchanger)\n3) Randomize MAC now\n0) Back")
+        c = Prompt.ask("Select", choices=["0","1","2","3"], default="0")
+        if c == "1":
+            self.tor_mode = not self.tor_mode
+            os.environ["REDEYES_TOR"] = "1" if self.tor_mode else "0"
+            console.print(f"[{SUCCESS_COLOR}]Tor routing {'ENABLED' if self.tor_mode else 'DISABLED'}[/]")
+        elif c == "2":
+            self.auto_mac = not self.auto_mac
+            os.environ["REDEYES_AUTO_MAC"] = "1" if self.auto_mac else "0"
+            console.print(f"[{SUCCESS_COLOR}]Auto-MAC {'ENABLED' if self.auto_mac else 'DISABLED'}[/]")
+        elif c == "3":
+            iface = Prompt.ask("Interface to randomize (e.g., wlan0)")
+            self._randomize_mac(iface)
+        input("Enter to continue...")
+
+    def _randomize_mac(self, interface: str) -> None:
+        """Randomize MAC for given interface using macchanger if available, else ip link."""
+        try:
+            rt = subprocess.run(['which', 'macchanger'], capture_output=True, text=True)
+            if rt.returncode == 0:
+                subprocess.run(['sudo', 'ip', 'link', 'set', interface, 'down'], timeout=5)
+                subprocess.run(['sudo', 'macchanger', '-r', interface], timeout=10)
+                subprocess.run(['sudo', 'ip', 'link', 'set', interface, 'up'], timeout=5)
+                console.print(f"[{SUCCESS_COLOR}]MAC randomized with macchanger on {interface}[/]")
+            else:
+                # Fallback: generate a locally administered MAC
+                import random as _r
+                mac = [0x02, _r.randint(0x00, 0x7f), _r.randint(0x00, 0xff), _r.randint(0x00, 0xff), _r.randint(0x00, 0xff), _r.randint(0x00, 0xff)]
+                mac_str = ":".join(f"{b:02x}" for b in mac)
+                subprocess.run(['sudo', 'ip', 'link', 'set', interface, 'down'], timeout=5)
+                subprocess.run(['sudo', 'ip', 'link', 'set', interface, 'address', mac_str], timeout=5)
+                subprocess.run(['sudo', 'ip', 'link', 'set', interface, 'up'], timeout=5)
+                console.print(f"[{SUCCESS_COLOR}]MAC randomized to {mac_str} on {interface}[/]")
+        except Exception as e:
+            console.print(f"[{ERROR_COLOR}]MAC change failed: {e}[/]")
+
+    def _get_default_interface(self) -> Optional[str]:
+        """Attempt to detect the default network interface using 'ip route'."""
+        try:
+            res = subprocess.run(['ip', 'route', 'show', 'default'], capture_output=True, text=True, timeout=3)
+            line = (res.stdout or '').strip().split('\n')[0]
+            if not line:
+                return None
+            parts = line.split()
+            if 'dev' in parts:
+                idx = parts.index('dev')
+                if idx + 1 < len(parts):
+                    return parts[idx+1]
+        except Exception:
+            return None
+        return None
+
+    def show_context_tips(self):
+        """Ask the model for quick, situation-aware tips."""
+        if not self.ollama_available:
+            console.print(f"[{WARNING_COLOR}]AI model not available[/]")
+            input("Enter to continue...")
+            return
+        # Prefer a 'baron' style model if present
+        model = self.selected_model
+        for m in self.ollama_models:
+            if 'baron' in m.lower():
+                model = m
+                break
+        # Temporarily override selected model for tip
+        prev = self.selected_model
+        self.selected_model = model
+        prompt = "Provide one concise, high-signal tip for the next action given the current context (targets, phase, tools). Output one or two lines."
+        tip = self.query_ollama(prompt, "You are a tactical advisor for a penetration testing operator.")
+        self.selected_model = prev
+        console.print(Panel(Text(tip.strip(), style="cyan"), title="💡 Tip", border_style="cyan"))
+        input("Enter to continue...")
 
     def target_management(self):
         """Target management interface"""
@@ -1749,7 +1941,9 @@ Example queries:
             f"**Session ID:** {self.session_id}",
             f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             f"**AI Model:** {self.selected_model or 'N/A'}",
-            f"",
+        ]
+        with open(report_file, 'w') as f:
+            f.write("\n".join(content))
             f"## 📊 Executive Summary",
             f"",
             f"| Metric | Value |",

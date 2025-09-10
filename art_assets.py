@@ -3,6 +3,7 @@
 Every major screen picks a different theme. Colors are applied by the caller (pink/red palette).
 """
 import os
+import random
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -115,11 +116,33 @@ _THEMES = {
 """,
 }
 
+# Optional extra art for easter eggs
+_EGGS = [
+    r"""
+       _.-'''''-._
+     .'  _     _  '.   BARON MODE
+    /   (_)   (_)   \
+   |  ,           ,  |
+   |  \`.       .`/  |
+    \  '.`'"'"'`.'  /
+     '.  `'---'`  .'
+       '-._____.-'
+    """,
+    r"""
+    (\_/)
+    ( •_•)  Daredevil watches.
+    / >🍪  You get one cookie, then recon.
+    """,
+]
+
 
 def print_theme(theme: str) -> None:
     if os.getenv("REDEYES_NO_ART") == "1":
         return
     art = _THEMES.get(theme, _THEMES["main"]).rstrip("\n")
+    # Easter eggs
+    if os.getenv("REDEYES_EASTER_EGGS") == "1" and random.random() < 0.08:
+        art = art + "\n" + random.choice(_EGGS)
     panel = Panel(Align.center(Text(art, style="red dim")), border_style="red", padding=(0, 2))
     console.print(panel)
 

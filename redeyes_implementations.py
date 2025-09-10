@@ -79,7 +79,8 @@ class CompletedImplementations:
                         cmd = ['subfinder', '-d', target, '-silent']
                     elif tool == 'assetfinder':
                         cmd = ['assetfinder', target]
-                    
+                    # Wrap for Tor if enabled
+                    cmd = framework._wrap_cmd(cmd)
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
                     
                     if result.stdout:
@@ -180,7 +181,7 @@ class CompletedImplementations:
             task = progress.add_task(f"[{AI_COLOR}]Running theHarvester on {target}...[/]", total=None)
             
             try:
-                cmd = ['theHarvester', '-d', target, '-b', ','.join(source_list)]
+                cmd = framework._wrap_cmd(['theHarvester', '-d', target, '-b', ','.join(source_list)])
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                 
                 if result.stdout:
@@ -267,14 +268,14 @@ class CompletedImplementations:
         
         if search_type == 'ip':
             target = Prompt.ask(f"[{USER_COLOR}]Enter IP address[/]")
-            cmd = ['shodan', 'host', target]
+            cmd = framework._wrap_cmd(['shodan', 'host', target])
         elif search_type == 'domain':
             target = Prompt.ask(f"[{USER_COLOR}]Enter domain[/]")
-            cmd = ['shodan', 'domain', target]
+            cmd = framework._wrap_cmd(['shodan', 'domain', target])
         else:
             target = Prompt.ask(f"[{USER_COLOR}]Enter Shodan query (e.g., 'port:22 country:US')[/]")
             count = Prompt.ask(f"[{USER_COLOR}]Number of results[/]", default='20')
-            cmd = ['shodan', 'search', '--limit', count, target]
+            cmd = framework._wrap_cmd(['shodan', 'search', '--limit', count, target])
         
         with console.status(f"[{AI_COLOR}]🌍 Querying Shodan...[/]"):
             try:
@@ -334,7 +335,7 @@ class CompletedImplementations:
             task = progress.add_task(f"[{AI_COLOR}]⚔️ Running Fierce DNS scanner on {target}...[/]", total=None)
             
             try:
-                cmd = ['fierce', '--domain', target]
+                cmd = framework._wrap_cmd(['fierce', '--domain', target])
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                 
                 if result.stdout:
@@ -571,6 +572,12 @@ class CompletedImplementations:
         """Host discovery implementation"""
         target_range = Prompt.ask(f"[{USER_COLOR}]Enter target range (e.g., 192.168.1.0/24)[/]")
         
+        # Pre-scan auto MAC change if enabled
+        if getattr(framework, 'auto_mac', False):
+            iface = framework._get_default_interface()
+            if iface:
+                framework._randomize_mac(iface)
+        
         scan_type = Prompt.ask(
             f"[{USER_COLOR}]Scan type[/]",
             choices=['ping', 'arp', 'tcp', 'udp', 'comprehensive'],
@@ -675,6 +682,7 @@ class CompletedImplementations:
             try:
                 # Fast scan with service detection
                 cmd = ['nmap', '-sS', '-sV', '-T4', '--top-ports', '1000', '-oX', '-', target]
+                cmd = framework._wrap_cmd(cmd)
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
                 
                 # Parse XML output
@@ -765,6 +773,12 @@ class CompletedImplementations:
         if not Confirm.ask(f"[{WARNING_COLOR}]Full port scan can take 10-30 minutes. Continue?[/]"):
             return
         
+        # Pre-scan auto MAC change if enabled
+        if getattr(framework, 'auto_mac', False):
+            iface = framework._get_default_interface()
+            if iface:
+                framework._randomize_mac(iface)
+        
         framework.current_target = target
         target_obj = framework.targets[target]
         
@@ -780,6 +794,7 @@ class CompletedImplementations:
             try:
                 # Full port scan
                 cmd = ['nmap', '-sS', '-T4', '-p-', '--min-rate', '1000', '-oX', '-', target]
+                cmd = framework._wrap_cmd(cmd)
                 process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 
                 # Monitor progress (simplified)
@@ -897,6 +912,7 @@ class CompletedImplementations:
             try:
                 # Run advanced service detection
                 cmd = ['nmap', '-sV', '-sC', '--version-all', '-p', port_str, '-oX', '-', target]
+                cmd = framework._wrap_cmd(cmd)
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)  # 15 min timeout
                 
                 if result.stdout:
@@ -1080,6 +1096,7 @@ class CompletedImplementations:
                         'smb-enum-domains,smb-enum-groups,smb-enum-processes,smb-enum-sessions,smb-enum-shares,smb-enum-users,smb-os-discovery,smb-security-mode,smb-system-info',
                         '-p', '139,445', '-oX', '-', target
                     ]
+                    cmd = framework._wrap_cmd(cmd)
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                     
                     if result.stdout:
@@ -1110,7 +1127,7 @@ class CompletedImplementations:
                 task = progress.add_task(f"[{AI_COLOR}]📋 Running enum4linux...[/]", total=None)
                 
                 try:
-                    cmd = ['enum4linux', '-a', target]
+                    cmd = framework._wrap_cmd(['enum4linux', '-a', target])
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
                     
                     if result.stdout:
@@ -1131,7 +1148,7 @@ class CompletedImplementations:
                 
                 try:
                     # List shares
-                    cmd = ['smbclient', '-L', target, '-N']
+                    cmd = framework._wrap_cmd(['smbclient', '-L', target, '-N'])
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                     
                     if result.stdout:
@@ -1170,7 +1187,7 @@ class CompletedImplementations:
                 task = progress.add_task(f"[{AI_COLOR}]🏷️ Running nbtscan...[/]", total=None)
                 
                 try:
-                    cmd = ['nbtscan', target]
+                    cmd = framework._wrap_cmd(['nbtscan', target])
                     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
                     
                     if result.stdout:

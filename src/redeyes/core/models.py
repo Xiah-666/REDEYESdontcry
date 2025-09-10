@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from datetime import datetime
 from typing import Dict, List, Optional
+from pathlib import Path
 
 
 class TestPhase(Enum):
@@ -37,4 +38,20 @@ class ChatMessage:
     content: str
     timestamp: datetime
     context_data: Optional[Dict] = None
+
+
+@dataclass
+class Case:
+    """Represents an investigation case context.
+    Outputs may be scoped under this root while the case is active.
+    """
+    case_id: str
+    name: str
+    root: Path
+    created_at: datetime
+    description: Optional[str] = None
+    entities: List[Dict] = field(default_factory=list)  # persons/companies
+    artifacts: List[Dict] = field(default_factory=list)  # files/intelligence
+    notes: List[str] = field(default_factory=list)
+    status: str = "open"  # open/closed
 

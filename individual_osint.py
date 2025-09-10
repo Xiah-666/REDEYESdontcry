@@ -8,6 +8,7 @@ import os
 import sys
 import json
 import requests
+import os
 import subprocess
 import time
 import re
@@ -42,6 +43,15 @@ class IndividualOSINT:
         with open(self.report_file, 'w') as f:
             json.dump(self.investigation_data, f, indent=2)
     
+    def _requests_session(self) -> requests.Session:
+        """Create a requests session honoring Tor if REDEYES_TOR=1 (socks5h on 127.0.0.1:9050)."""
+        s = requests.Session()
+        if os.getenv("REDEYES_TOR") == "1":
+            proxies = {"http": "socks5h://127.0.0.1:9050", "https": "socks5h://127.0.0.1:9050"}
+            s.proxies.update(proxies)
+        s.headers.update({"User-Agent": "REDEYESdontcry-OSINT/1.0"})
+        return s
+
     def search_social_media(self, name: str, username: str = None, email: str = None) -> Dict:
         """Search across multiple social media platforms"""
         results = {
@@ -65,10 +75,11 @@ class IndividualOSINT:
             'pinterest': f'https://pinterest.com/{username}' if username else None
         }
         
+        session = self._requests_session()
         for platform, url in platforms.items():
             if url:
                 try:
-                    response = requests.head(url, timeout=5, allow_redirects=True)
+                    response = session.head(url, timeout=10, allow_redirects=True)
                     if response.status_code == 200:
                         results['platforms'][platform] = {
                             'url': url,
