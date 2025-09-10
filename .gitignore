@@ -1,0 +1,38 @@
+# Python cache and build
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+dist/
+build/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+.cache/
+.ipynb_checkpoints/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Project outputs (not committed)
+results/
+redeyes_results/
+logs/
+reports/
+
+# Local tmp and logs
+tmp/
+*.log
+
+# Reduce clutter in repo root
+/demo_autonomous.py
+/demo_new_features.py
+/test_framework.py
+/setup.sh
+

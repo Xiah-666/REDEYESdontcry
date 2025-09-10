@@ -1,0 +1,27 @@
+# REDEYESdontcry Framework Dependencies
+# Core UI and utilities
+rich>=13.0.0
+colorama>=0.4.6
+requests>=2.28.0
+lxml>=4.9.0
+beautifulsoup4>=4.11.0
+
+# Network and security libraries
+python-nmap>=0.7.1
+scapy>=2.5.0
+dnspython>=2.3.0
+
+# Data analysis and parsing
+python-dateutil>=2.8.2
+python-magic>=0.4.27
+
+# Optional - enhance functionality
+PyPDF2>=3.0.0
+Pillow>=9.0.0
+plotly>=5.11.0
+jinja2>=3.1.0
+
+# Development and testing (optional)
+pytest>=7.0.0
+black>=22.0.0
+flake8>=5.0.0
